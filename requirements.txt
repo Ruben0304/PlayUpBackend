@@ -1,2 +1,4 @@
 fastapi
-supabase
+redis
+types-redis
+uvicorn
