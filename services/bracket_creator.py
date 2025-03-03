@@ -1,6 +1,7 @@
 from math import ceil, log2
 from typing import Dict, List, Any
 from .bracket_service import BracketService
+import random
 
 class BracketCreator:
     def __init__(self):
@@ -26,6 +27,9 @@ class BracketCreator:
 
             if num_teams < 2:
                 raise Exception(f'Not enough teams to create brackets (found {num_teams})')
+
+            # Aleatoriza la lista de team_ids
+            random.shuffle(team_ids)
 
             # Calculate rounds and get fixture rounds
             total_rounds = ceil(log2(num_teams))
