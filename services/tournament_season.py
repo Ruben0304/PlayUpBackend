@@ -1,8 +1,19 @@
 from infrastructure.supabase_client import SupabaseClient
 from domain.models import Match, TournamentSeason, OtherMatch
+from .bracket_creator import BracketCreator
 import os
 
 class TournamentSeasonService:
+    @staticmethod
+    def create_bracket(payload):
+        try:
+            tournament_season_id = payload['tournament_season_id']
+            bracket_creator = BracketCreator()
+            return bracket_creator.create_bracket_structure(tournament_season_id)
+        except Exception as error:
+            print(f"Error in create_bracket: {error}")
+            return {'status': 500, 'message': str(error)}
+
     @staticmethod
     def assign_team_to_next_slot(supabase, team_id, next_slot_id):
         print(f"Asignando equipo {team_id} al next_slot {next_slot_id}")
