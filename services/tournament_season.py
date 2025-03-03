@@ -7,9 +7,50 @@ class TournamentSeasonService:
     @staticmethod
     def create_bracket(payload):
         try:
-            tournament_season_id = payload['tournament_season_id']
+            # Adaptamos para aceptar el nuevo formato de payload
+            tournament_season_id = payload.get('tournamentSeasonId') or payload.get('tournament_season_id')
+            matches = payload.get('matches', [])
+            
+            if not tournament_season_id:
+                return {'status': 400, 'message': 'tournamentSeasonId es requerido'}
+            
             bracket_creator = BracketCreator()
-            return bracket_creator.create_bracket_structure(tournament_season_id)
+            
+            # Si tenemos matches predefinidos, los usamos
+            if matches:
+                # Convertimos el formato si es necesario
+                formatted_matches = []
+                for match in matches:
+                    home_id = match.get('home')
+                    away_id = match.get('away')
+                    
+                    formatted_matches.append({
+                        'home_id': home_id,
+                        'away_id': away_id
+                    })
+                
+                # Llamamos al método con los matches predefinidos
+                result = bracket_creator.create_bracket_with_matches(tournament_season_id, formatted_matches)
+            else:
+                # Comportamiento original
+                result = bracket_creator.create_bracket_structure(tournament_season_id)
+            
+            # Actualizar el campo is_matchs_generated a true en tournament_season
+            print(f"Actualizando tournament_season {tournament_season_id} con is_matchs_generated=true")
+            supabase = SupabaseClient()
+            update_response = supabase.client.table('tournament_season') \
+                .update({'is_matchs_generated': True}) \
+                .eq('id', tournament_season_id) \
+                .execute()
+            
+            if hasattr(update_response, 'error') and update_response.error:
+                print(f"Error actualizando tournament_season: {update_response.error}")
+                raise Exception(f"Error updating tournament_season: {update_response.error.message}")
+            else:
+                print("Campo is_matchs_generated actualizado correctamente")
+                
+            return result
+            
         except Exception as error:
             print(f"Error in create_bracket: {error}")
             return {'status': 500, 'message': str(error)}
