@@ -13,3 +13,8 @@ async def get_countries(language: str = "en"):
 async def handle_match_finished(request: Request):
     payload = await request.json()
     return TournamentSeasonService.handle_match_finished(payload)
+
+@router.post("/tournament-seasons/create-bracket")
+async def create_bracket(request: Request):
+    payload = await request.json()
+    return TournamentSeasonService.create_bracket(payload)
