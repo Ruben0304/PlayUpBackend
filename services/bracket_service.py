@@ -6,6 +6,16 @@ class BracketService:
     def __init__(self):
         self.supabase = SupabaseClient()
 
+    def cleanBracketsIfExist(self, tournament_season_id: int) -> int:
+        response = self.supabase.client.rpc('delete_tournament_brackets', {
+            'p_tournament_season_id': tournament_season_id
+        }).execute()
+            
+        if hasattr(response, 'error') and response.error:
+            raise Exception(f"Error removing brackets: {response.error.message}")
+            
+        return True
+
     def get_team_count(self, tournament_season_id: int) -> int:
         response = self.supabase.client.table('team_tournament') \
             .select('*', count='exact') \
