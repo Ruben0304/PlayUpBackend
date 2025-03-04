@@ -1,5 +1,6 @@
 from infrastructure.supabase_client import SupabaseClient
 from domain.models import Match, TournamentSeason, OtherMatch
+from services.bracket_service import BracketService
 from .bracket_creator import BracketCreator
 import os
 
@@ -10,7 +11,11 @@ class TournamentSeasonService:
             # Adaptamos para aceptar el nuevo formato de payload
             tournament_season_id = payload.get('tournamentSeasonId') or payload.get('tournament_season_id')
             matches = payload.get('matches', [])
-            
+
+            # Limpiar los brackets si existen
+            bracket_service = BracketService()
+            bracket_service.cleanBracketsIfExist(tournament_season_id)
+        
             if not tournament_season_id:
                 return {'status': 400, 'message': 'tournamentSeasonId es requerido'}
             
@@ -260,3 +265,112 @@ class TournamentSeasonService:
         except Exception as error:
             print('Function error:', error)         
             return {'status': 500, 'message': str(error)}
+
+    @staticmethod
+    def update_standing_rank(payload):
+        try:
+            # Get tournament_season from payload
+            tournament_season_id = payload['record']['tournament_season']
+            if not tournament_season_id:
+                return {'status': 400, 'message': 'tournament_season is required in payload'}
+            
+            print(f"Processing tournament_season_id: {tournament_season_id}")
+            
+            # Initialize Supabase client
+            supabase = SupabaseClient()
+            
+            # Get all standings for this tournament_season
+            standing_response = supabase.client.table("standing").select("*").eq('tournament_season', tournament_season_id).execute()
+            
+            if standing_response == None:
+                print(f"Error fetching standings")
+                raise Exception(f"Error fetching standings")
+            
+            standings = standing_response.data
+            
+            if not standings or len(standings) == 0:
+                return {'status': 404, 'message': f'No standings found for tournament_season {tournament_season_id}'}
+            
+            print(f"Found {len(standings)} standings for tournament_season {tournament_season_id}")
+            
+            # Check if we need to group by group column
+            has_groups = any(standing['group'] is not None for standing in standings)
+            
+            # Store original ranks to check for changes later
+            original_ranks = {standing['id']: standing['rank'] for standing in standings}
+            
+            results = []
+            updates_made = 0
+            
+            if has_groups:
+                print("Processing standings by groups")
+                # Group standings by their group value
+                standings_by_group = {}
+                for standing in standings:
+                    group_id = standing['group']
+                    if group_id not in standings_by_group:
+                        standings_by_group[group_id] = []
+                    standings_by_group[group_id].append(standing)
+                
+                # Process each group separately
+                for group_id, group_standings in standings_by_group.items():
+                    print(f"Processing group {group_id} with {len(group_standings)} standings")
+                    
+                    # Sort by points and goal difference within this group
+                    group_standings.sort(key=lambda x: (x['points'], x['goals_diff']), reverse=True)
+                    
+                    # Assign ranks within this group
+                    for index, standing in enumerate(group_standings):
+                        new_rank = index + 1
+                        # Check if rank has changed
+                        if standing['rank'] != new_rank:
+                            standing['rank'] = new_rank
+                            results.append({'id': standing['id'], 'rank': new_rank})
+                            
+                            # Only update in database if rank has changed
+                            print(f"Updating standing ID {standing['id']} from rank {original_ranks[standing['id']]} to {new_rank}")
+                            update_response = supabase.client.table("standing") \
+                                .update({'rank': new_rank}) \
+                                .eq('id', standing['id']) \
+                                .execute()
+                            
+                            if update_response == None:
+                                print(f"Error updating standing")
+                                raise Exception(f"Failed to update rank for standing {standing['id']}")
+                            updates_made += 1
+                        else:
+                            print(f"Standing ID {standing['id']} rank unchanged at {standing['rank']}")
+            else:
+                print("Processing all standings together (no groups)")
+                # Sort all standings by points and goal difference
+                standings.sort(key=lambda x: (x['points'], x['goals_diff']), reverse=True)
+                
+                # Assign ranks
+                for index, standing in enumerate(standings):
+                    new_rank = index + 1
+                    # Check if rank has changed
+                    if standing['rank'] != new_rank:
+                        standing['rank'] = new_rank
+                        results.append({'id': standing['id'], 'rank': new_rank})
+                        
+                        # Only update in database if rank has changed
+                        print(f"Updating standing ID {standing['id']} from rank {original_ranks[standing['id']]} to {new_rank}")
+                        update_response = supabase.client.table("standing") \
+                            .update({'rank': new_rank}) \
+                            .eq('id', standing['id']) \
+                            .execute()
+                        
+                        if update_response == None:
+                            print(f"Error updating standing")
+                            raise Exception(f"Failed to update rank for standing {standing['id']}")
+                        updates_made += 1
+                    else:
+                        print(f"Standing ID {standing['id']} rank unchanged at {standing['rank']}")
+            
+            print(f"Total updates made: {updates_made} out of {len(standings)} standings")
+            return {'status': 200, 'message': 'Success', 'results': results, 'updates_made': updates_made}
+            
+        except Exception as error:
+            print(f"Error in update_standing_rank: {error}")
+            return {'status': 500, 'message': str(error)}
+

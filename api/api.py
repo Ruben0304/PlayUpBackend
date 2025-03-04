@@ -18,3 +18,8 @@ async def handle_match_finished(request: Request):
 async def create_bracket(request: Request):
     payload = await request.json()
     return TournamentSeasonService.create_bracket(payload)
+
+@router.post("/tournament-season/update-standing-rank")
+async def update_standing_rank(request: Request):
+    payload = await request.json()
+    return TournamentSeasonService.update_standing_rank(payload)
