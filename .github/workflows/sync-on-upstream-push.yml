@@ -1,26 +1,31 @@
-name: Notify Forks
+name: Sync on Upstream Push
 
 on:
-  push:
-    branches:
-      - main
+  repository_dispatch:
+    types: [push_event]
 
 jobs:
-  notify:
+  sync:
     runs-on: ubuntu-latest
+    if: github.event.client_payload.ref == 'refs/heads/main'
+    
     steps:
-      - name: Dispatch to fork
-        uses: peter-evans/repository-dispatch@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
+          fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN }}
-          repository: Ruben0304/PlayUpBackend
-          event-type: push_event
-          client-payload: '{"ref": "${{ github.ref }}"}'
+          ref: main
+          
+      - name: Configurar Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
       - name: Sincronizar con upstream
         run: |
           git remote add upstream https://github.com/PlayUpOrg/PlayUpBackend.git
           git fetch upstream main
-          git checkout main
           
           # Crear una rama temporal para la fusión
           git checkout -b temp-merge-branch
@@ -34,4 +39,4 @@ jobs:
           git commit -m "Merge upstream changes excluding workflows"
           git checkout main
           git merge temp-merge-branch
-          git push origin main
+          git push origin main 
