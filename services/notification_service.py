@@ -25,9 +25,8 @@ class NotificationService:
                 "user_id": user_id
             }
             
-            response = SupabaseClient.insert_notification(notification)
-            return response.data is not None
+            SupabaseClient.insert_notification(notification)
+            return {"status": 200, "message": "Notification sent successfully"}
         
         except Exception as e:
-            print(f"Error pushing notification: {str(e)}")
-            return False
+            return {"status": 500, "message": str(e)}
