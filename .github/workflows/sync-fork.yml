@@ -14,6 +14,8 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
           
       - name: Configurar Git
         run: |
@@ -24,6 +26,17 @@ jobs:
         run: |
           git remote add upstream https://github.com/PlayUpOrg/PlayUpBackend.git
           git fetch upstream main
+          
+          # Crear una rama temporal para la fusión
+          git checkout -b temp-merge-branch
+          
+          # Fusionar excluyendo archivos de workflow
+          git merge -X ours --no-commit upstream/main
+          git reset HEAD .github/workflows/
+          git checkout -- .github/workflows/
+          
+          # Confirmar y enviar los cambios
+          git commit -m "Merge upstream changes excluding workflows"
           git checkout main
-          git merge upstream/main
+          git merge temp-merge-branch
           git push origin main
