@@ -13,6 +13,6 @@ jobs:
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.PAT_TOKEN }}
-          repository: Ruben0304/playup_backend
+          repository: Ruben0304/PlayUpBackend
           event-type: push_event
           client-payload: '{"ref": "${{ github.ref }}"}'
