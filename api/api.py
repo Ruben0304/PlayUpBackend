@@ -3,16 +3,9 @@ from services.country_service import CountryService
 from services.notification_service import NotificationService
 from services.tournament_season import TournamentSeasonService
 from services.user_service import UserService
-from core.config import SUPABASE_URL, SUPABASE_KEY
+
 
 router = APIRouter()
-
-@router.get("/env")
-async def get_env():
-    return {
-        "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_KEY": SUPABASE_KEY
-    }
 
 @router.get("/countries")
 async def get_countries(language: str = "en"):
