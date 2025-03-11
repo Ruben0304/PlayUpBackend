@@ -2,3 +2,8 @@ fastapi
 redis
 types-redis
 uvicorn
+
+pydantic
+dotenv
+python-dotenv
+supabase

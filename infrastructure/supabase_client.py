@@ -1,11 +1,11 @@
 import os
 from supabase import create_client, Client
-from core.config import SUPABASE_URL, SUPABASE_KEY
+
+from core.config import SUPABASE_KEY, SUPABASE_URL
+
 
 class SupabaseClient:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-    client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    client: Client = create_client(supabase_url=SUPABASE_URL,supabase_key= SUPABASE_KEY)
 
     @staticmethod
     def get_countries():
