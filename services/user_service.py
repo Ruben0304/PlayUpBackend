@@ -1,5 +1,6 @@
 from infrastructure.supabase_client import SupabaseClient
 from services.notification_service import NotificationService
+from fastapi import Request, HTTPException
 
 class UserService:
     @staticmethod
@@ -34,3 +35,28 @@ class UserService:
         except Exception as e:
             print(f"Error approving organizer: {str(e)}")
             raise e
+
+    @staticmethod
+    async def get_user_from_token(request: Request, required=False):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            if required:
+                raise HTTPException(status_code=401, detail="Authorization header is required")
+            return None
+        
+        try:
+            # Extraer el token
+            token = auth_header.split(' ')[1]
+            # Obtener el usuario usando el token
+            user = SupabaseClient.client.auth.get_user(token)
+            if not user or not hasattr(user.user, 'id'):
+                if required:
+                    raise HTTPException(status_code=401, detail="Invalid token or user not found")
+                return None
+            
+            return user.user.id
+        except Exception as e:
+            if required:
+                raise HTTPException(status_code=401, detail=f"Authentication error: {str(e)}")
+            print(f"Error al obtener usuario del token: {e}")
+            return None
