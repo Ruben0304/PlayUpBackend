@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Request,UploadFile, File,Form
 from domain.schemas.file_schema import ImageUploadRequest
 from services.country_service import CountryService
 from services.file_service import FileService
+from services.news_service import NewsService
 from services.notification_service import NotificationService
 from services.tournament_season import TournamentSeasonService
 from services.user_service import UserService
@@ -42,6 +43,10 @@ async def approve_organizer_from_waitlist(request: Request):
     payload = await request.json()
     return UserService.approve_organizer_from_waitlist(payload['user_id'])
 
+@router.get("/news")
+async def get_news(request: Request, page: int = 1, page_size: int = 20):
+    return NewsService.fetch(page, page_size)
+
 @router.post("/upload")
 async def upload_file(
         folder_name: str = Form(...),
@@ -54,7 +59,6 @@ async def upload_file(
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Solo se permiten archivos de imagen")
-
         # Crear request object
         upload_request = ImageUploadRequest(
             folder_name=folder_name,
