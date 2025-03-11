@@ -135,6 +135,10 @@ async def debug_comments(news_id: int):
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/news")
+async def get_news(request: Request, page: int = 1, page_size: int = 20):
+    return NewsService.fetch(page, page_size)
+
 @router.post("/upload")
 async def upload_file(
         folder_name: str = Form(...),
@@ -160,24 +164,6 @@ async def upload_file(
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Solo se permiten archivos de imagen")
-
-        # Determinar dimensiones (priorizar parámetros específicos)
-        width = target_width
-        height = target_height
-
-        # Si no se proporcionan dimensiones específicas, usar el enum
-        if (width is None or height is None) and image_size:
-            try:
-                selected_size = ImageSize[image_size]
-                width = selected_size.width
-                height = selected_size.height
-            except KeyError:
-                raise HTTPException(400, f"Tamaño de imagen no válido. Opciones disponibles: {', '.join([size.name for size in ImageSize])}")
-
-        # Verificar que tenemos dimensiones válidas
-        if width is None or height is None:
-            raise HTTPException(400, "Debe proporcionar dimensiones (target_width y target_height) o un tamaño predefinido (image_size)")
-
         # Crear request object
         upload_request = ImageUploadRequest(
             folder_name=folder_name,
