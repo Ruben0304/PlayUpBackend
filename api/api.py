@@ -137,7 +137,97 @@ async def debug_comments(news_id: int):
 
 @router.get("/news")
 async def get_news(request: Request, page: int = 1, page_size: int = 20):
-    return NewsService.fetch(page, page_size)
+    user_id = await UserService.get_user_from_token(request)
+    return NewsService.fetch(page, page_size, user_id)
+
+@router.post("/news/{news_id}/like")
+async def toggle_like(news_id: int, request: Request):
+    user_id = await UserService.get_user_from_token(request, required=True)
+    return NewsInteractionService.toggle_like(news_id, user_id)
+
+@router.post("/news/{news_id}/comment")
+async def add_comment(news_id: int, request: Request):
+    # Obtener el user_id del token (requerido)
+    user_id = await UserService.get_user_from_token(request, required=True)
+    
+    # Obtener el contenido del comentario
+    payload = await request.json()
+    content = payload.get("content")
+    
+    if not content:
+        raise HTTPException(status_code=400, detail="Comment content is required")
+    
+    return NewsInteractionService.add_comment(news_id, user_id, content)
+
+@router.get("/news/{news_id}/comments")
+async def get_comments(
+    news_id: int, 
+    page: int = Query(1, ge=1, description="Número de página, comenzando desde 1"),
+    page_size: int = Query(10, ge=1, le=50, description="Número de comentarios por página (máx. 50)")
+):
+    """
+    Obtiene los comentarios de una noticia específica con paginación.
+    
+    - **news_id**: ID de la noticia
+    - **page**: Número de página (comienza en 1)
+    - **page_size**: Número de comentarios por página (máximo 50)
+    
+    Devuelve los comentarios ordenados por fecha de creación (más recientes primero)
+    con información del usuario que los publicó.
+    """
+    return NewsInteractionService.get_comments(news_id, page, page_size)
+
+@router.delete("/news/comment/{comment_id}")
+async def delete_comment(comment_id: int, request: Request):
+    # Obtener el user_id del token (requerido)
+    user_id = await UserService.get_user_from_token(request, required=True)
+    return NewsInteractionService.delete_comment(comment_id, user_id)
+
+@router.get("/news/{news_id}")
+async def get_news_detail(
+    news_id: int, 
+    request: Request, 
+    include_comments: bool = Query(False, description="Incluir comentarios en la respuesta"),
+    comments_page: int = Query(1, ge=1, description="Página de comentarios"),
+    comments_page_size: int = Query(10, ge=1, le=50, description="Comentarios por página")
+):
+    """
+    Obtiene una noticia específica con detalles completos.
+    
+    Opcionalmente puede incluir los comentarios de la noticia.
+    """
+    user_id = await UserService.get_user_from_token(request)
+    
+    # Obtener la noticia
+    news_detail = NewsService.fetch_by_id(news_id, user_id)
+    
+    # Si se solicitan comentarios, incluirlos en la respuesta
+    if include_comments and news_detail and "data" in news_detail:
+        comments = NewsInteractionService.get_comments(news_id, comments_page, comments_page_size)
+        news_detail["comments"] = comments
+    
+    return news_detail
+
+@router.get("/debug/news/{news_id}/comments")
+async def debug_comments(news_id: int):
+    """
+    Endpoint de diagnóstico para verificar comentarios directamente.
+    """
+    try:
+        # Consulta directa a la base de datos
+        response = SupabaseClient.client.table('news_comment').select('*').eq('news_id', news_id).execute()
+        
+        # Verificar si hay datos
+        if hasattr(response, 'data'):
+            return {
+                "raw_data": response.data,
+                "count": len(response.data) if response.data else 0,
+                "news_id": news_id
+            }
+        else:
+            return {"error": "No se pudo obtener datos", "response": str(response)}
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.post("/upload")
 async def upload_file(
