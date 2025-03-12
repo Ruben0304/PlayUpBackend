@@ -191,11 +191,6 @@ async def get_news_detail(
     comments_page: int = Query(1, ge=1, description="Página de comentarios"),
     comments_page_size: int = Query(10, ge=1, le=50, description="Comentarios por página")
 ):
-    """
-    Obtiene una noticia específica con detalles completos.
-    
-    Opcionalmente puede incluir los comentarios de la noticia.
-    """
     user_id = await UserService.get_user_from_token(request)
     
     # Obtener la noticia
@@ -210,9 +205,6 @@ async def get_news_detail(
 
 @router.get("/debug/news/{news_id}/comments")
 async def debug_comments(news_id: int):
-    """
-    Endpoint de diagnóstico para verificar comentarios directamente.
-    """
     try:
         # Consulta directa a la base de datos
         response = SupabaseClient.client.table('news_comment').select('*').eq('news_id', news_id).execute()
@@ -267,7 +259,6 @@ async def upload_file(
 
     except Exception as e:
         raise HTTPException(500, f"Error subiendo archivo: {str(e)}")
-
 @router.post("/news")
 async def create_news(
     request: Request,
