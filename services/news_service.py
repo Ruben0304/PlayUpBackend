@@ -7,6 +7,8 @@ import os
 from datetime import datetime
 from fastapi import HTTPException
 from services.user_service import UserService
+from domain.schemas.file_schema import ImageUploadRequest
+from services.file_service import FileService
 
 class NewsService:
     @staticmethod
@@ -113,9 +115,57 @@ class NewsService:
                 processed_item['like_count'] = NewsInteractionService.get_like_count(news_id)
                 processed_item['comment_count'] = NewsInteractionService.get_comment_count(news_id)
                 
+                # Siempre establecer owner, incluso si user_id es None
+                processed_item['owner'] = False
+                
                 # Si se proporciona un user_id, verificar si el usuario ha dado like
                 if user_id:
                     processed_item['user_liked'] = NewsInteractionService.has_user_liked(news_id, user_id)
+                    
+                    # Verificar si el usuario es el propietario de la noticia
+                    publisher_type_id = processed_item.get('publisher_type')
+                    
+                    # Obtener el ID del publisher (ahora es un objeto)
+                    publisher_id = processed_item.get('publisher', {}).get('id')
+                    publisher_type_name = user_types.get(publisher_type_id, '')
+                    
+                    # Por defecto, no es propietario
+                    is_owner = False
+                    
+                    # Si el publisher_type es 'user' y el publisher es el usuario actual
+                    if publisher_type_name == 'user':
+                        is_owner = str(publisher_id) == str(user_id)
+                    # Si el publisher_type es 'team', verificar si el usuario es dueño del equipo
+                    elif publisher_type_name == 'team':
+                        try:
+                            team_response = SupabaseClient.client.table('team').select('user').eq('id', publisher_id).single().execute()
+                            is_owner = bool(team_response.data and str(team_response.data.get('user')) == str(user_id))
+                        except Exception as e:
+                            print(f"Error al verificar propiedad del equipo: {e}")
+                    # Si el publisher_type es 'organization', verificar si el usuario pertenece a la organización
+                    elif publisher_type_name == 'organization':
+                        try:
+                            # Verificar si el usuario pertenece a la organización (sin verificar role)
+                            org_response = SupabaseClient.client.table('user_organization').select('id').eq('organization', publisher_id).eq('user', user_id).execute()
+                            # Si hay registros, el usuario pertenece a la organización
+                            is_owner = bool(org_response.data and len(org_response.data) > 0)
+                        except Exception as e:
+                            print(f"Error al verificar pertenencia a la organización: {e}")
+                    # Si el publisher_type es 'tournament', verificar si el usuario es admin de la organización del torneo
+                    elif publisher_type_name == 'tournament':
+                        try:
+                            # Obtener la organización del torneo
+                            tournament_response = SupabaseClient.client.table('tournament').select('organization').eq('id', publisher_id).single().execute()
+                            if tournament_response.data:
+                                org_id = tournament_response.data.get('organization')
+                                # Verificar si el usuario es admin de la organización
+                                org_response = SupabaseClient.client.table('user_organization').select('role').eq('organization', org_id).eq('user', user_id).single().execute()
+                                # Asumiendo que role=1 es admin
+                                is_owner = bool(org_response.data and org_response.data.get('role') == 1)
+                        except Exception as e:
+                            print(f"Error al verificar propiedad del torneo: {e}")
+                    
+                    processed_item['owner'] = is_owner
                 
                 processed_data.append(processed_item)
             
@@ -215,9 +265,57 @@ class NewsService:
             processed_item['like_count'] = NewsInteractionService.get_like_count(news_id)
             processed_item['comment_count'] = NewsInteractionService.get_comment_count(news_id)
             
+            # Siempre establecer owner, incluso si user_id es None
+            processed_item['owner'] = False
+            
             # Si se proporciona un user_id, verificar si el usuario ha dado like
             if user_id:
                 processed_item['user_liked'] = NewsInteractionService.has_user_liked(news_id, user_id)
+                
+                # Verificar si el usuario es el propietario de la noticia
+                publisher_type_id = processed_item.get('publisher_type')
+                
+                # Obtener el ID del publisher (ahora es un objeto)
+                publisher_id = processed_item.get('publisher', {}).get('id')
+                publisher_type_name = user_types.get(publisher_type_id, '')
+                
+                # Por defecto, no es propietario
+                is_owner = False
+                
+                # Si el publisher_type es 'user' y el publisher es el usuario actual
+                if publisher_type_name == 'user':
+                    is_owner = str(publisher_id) == str(user_id)
+                # Si el publisher_type es 'team', verificar si el usuario es dueño del equipo
+                elif publisher_type_name == 'team':
+                    try:
+                        team_response = SupabaseClient.client.table('team').select('user').eq('id', publisher_id).single().execute()
+                        is_owner = bool(team_response.data and str(team_response.data.get('user')) == str(user_id))
+                    except Exception as e:
+                        print(f"Error al verificar propiedad del equipo: {e}")
+                # Si el publisher_type es 'organization', verificar si el usuario pertenece a la organización
+                elif publisher_type_name == 'organization':
+                    try:
+                        # Verificar si el usuario pertenece a la organización (sin verificar role)
+                        org_response = SupabaseClient.client.table('user_organization').select('id').eq('organization', publisher_id).eq('user', user_id).execute()
+                        # Si hay registros, el usuario pertenece a la organización
+                        is_owner = bool(org_response.data and len(org_response.data) > 0)
+                    except Exception as e:
+                        print(f"Error al verificar pertenencia a la organización: {e}")
+                # Si el publisher_type es 'tournament', verificar si el usuario es admin de la organización del torneo
+                elif publisher_type_name == 'tournament':
+                    try:
+                        # Obtener la organización del torneo
+                        tournament_response = SupabaseClient.client.table('tournament').select('organization').eq('id', publisher_id).single().execute()
+                        if tournament_response.data:
+                            org_id = tournament_response.data.get('organization')
+                            # Verificar si el usuario es admin de la organización
+                            org_response = SupabaseClient.client.table('user_organization').select('role').eq('organization', org_id).eq('user', user_id).single().execute()
+                            # Asumiendo que role=1 es admin
+                            is_owner = bool(org_response.data and org_response.data.get('role') == 1)
+                    except Exception as e:
+                        print(f"Error al verificar propiedad del torneo: {e}")
+                
+                processed_item['owner'] = is_owner
             
             return {"data": processed_item}
             
@@ -268,6 +366,29 @@ class NewsService:
             
             # Verificar que el publisher existe en la tabla correspondiente
             try:
+                # Manejar diferentes tipos de ID según el tipo de publisher
+                if publisher_type_name == 'user':
+                    # Para usuarios, el ID debe ser un UUID
+                    try:
+                        uuid_obj = uuid.UUID(str(final_publisher_id))
+                        final_publisher_id = str(uuid_obj)  # Asegurarse de que esté en formato correcto
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"ID de usuario inválido: {final_publisher_id}. Debe ser un UUID válido."
+                        )
+                else:
+                    # Para team, organization y tournament, el ID debe ser un entero
+                    try:
+                        # Intentar convertir a entero
+                        int_id = int(final_publisher_id)
+                        final_publisher_id = int_id  # Usar el valor entero directamente
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"ID de {publisher_type_name} inválido: {final_publisher_id}. Debe ser un número entero."
+                        )
+                
                 publisher_response = SupabaseClient.client.table(publisher_type_name).select('id').eq('id', final_publisher_id).single().execute()
                 
                 if not publisher_response.data:
@@ -322,37 +443,71 @@ class NewsService:
                 final_media_urls = media_urls
             # Si no, procesar los archivos multimedia si se proporcionan
             elif media_files:
-                # Asegurarse de que el bucket existe
-                bucket_name = "news_media"
-                try:
-                    buckets = SupabaseClient.client.storage.list_buckets()
-                    bucket_exists = any(bucket.name == bucket_name for bucket in buckets)
-                    
-                    if not bucket_exists:
-                        SupabaseClient.client.storage.create_bucket(bucket_name)
-                except Exception as bucket_error:
-                    print(f"Error al verificar/crear bucket: {bucket_error}")
-                
-                # Subir cada archivo
+                # Usar el servicio de upload de archivos en lugar de subir directamente a Supabase
+                file_service = FileService()
                 for media_file in media_files:
                     try:
-                        # Generar un nombre único para el archivo
+                        # Preparar los datos para la API de upload
+                        folder_name = "news_media"
                         file_ext = os.path.splitext(media_file.get('filename', ''))[1]
                         unique_filename = f"{uuid.uuid4()}{file_ext}"
-                        file_path = f"{unique_filename}"
                         
-                        # Subir el archivo
-                        result = SupabaseClient.client.storage.from_(bucket_name).upload(
-                            file_path,
-                            media_file.get('content'),
-                            file_options={"content-type": media_file.get('content_type', 'image/jpeg')}
+                        # Obtener el contenido
+                        content = media_file.get('content')
+                        content_type = media_file.get('content_type', 'image/jpeg')
+                        
+                        # Crear la solicitud de carga
+                        upload_request = ImageUploadRequest(
+                            folder_name=folder_name,
+                            target_width=1200,  # POST_BANNER width
+                            target_height=1200,  # POST_BANNER height
+                            desired_filename=unique_filename
                         )
                         
-                        # Obtener la URL pública
-                        media_url = SupabaseClient.client.storage.from_(bucket_name).get_public_url(file_path)
-                        final_media_urls.append(media_url)
+                        # Crear un archivo temporal con el contenido
+                        import tempfile
+                        
+                        # Crear un archivo temporal
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                            temp_file.write(content)
+                            temp_file_path = temp_file.name
+                        
+                        # Crear un objeto similar a UploadFile manualmente
+                        class MockUploadFile:
+                            def __init__(self, filename, content_type, file_path):
+                                self.filename = filename
+                                self._content_type = content_type
+                                self.file_path = file_path
+                            
+                            @property
+                            def content_type(self):
+                                return self._content_type
+                            
+                            async def read(self):
+                                with open(self.file_path, 'rb') as f:
+                                    return f.read()
+                        
+                        # Crear el objeto MockUploadFile
+                        mock_upload_file = MockUploadFile(
+                            filename=unique_filename,
+                            content_type=content_type,
+                            file_path=temp_file_path
+                        )
+                        
+                        # Procesar y subir el archivo
+                        media_url = await file_service.process_and_upload(mock_upload_file, upload_request)
+                        
+                        # Eliminar el archivo temporal
+                        os.unlink(temp_file_path)
+                        
+                        # Añadir la URL a la lista
+                        if media_url:
+                            final_media_urls.append(media_url)
+                        
                     except Exception as upload_error:
                         print(f"Error al subir archivo multimedia: {upload_error}")
+                        import traceback
+                        traceback.print_exc()
             
             # Preparar datos para la inserción
             news_data = {
@@ -414,16 +569,8 @@ class NewsService:
             if not (is_creator or is_admin):
                 raise HTTPException(status_code=403, detail="No tienes permisos para eliminar esta noticia")
             
-            # Eliminar archivos multimedia asociados
-            if 'media_urls' in news.data and news.data['media_urls']:
-                bucket_name = "news_media"
-                for url in news.data['media_urls']:
-                    try:
-                        # Extraer el nombre del archivo de la URL
-                        file_name = url.split('/')[-1]
-                        SupabaseClient.client.storage.from_(bucket_name).remove([file_name])
-                    except Exception as e:
-                        print(f"Error al eliminar archivo multimedia: {e}")
+            # No es necesario eliminar los archivos multimedia de Digital Ocean
+            # Se puede implementar una limpieza periódica si es necesario
             
             # Eliminar la noticia
             SupabaseClient.client.table('news').delete().eq('id', news_id).execute()
@@ -499,51 +646,83 @@ class NewsService:
             
             # Eliminar archivos multimedia si se solicita
             if delete_media_urls:
-                bucket_name = "news_media"
                 for url in delete_media_urls:
                     if url in current_media_urls:
                         try:
-                            # Extraer el nombre del archivo de la URL
-                            file_name = url.split('/')[-1]
-                            SupabaseClient.client.storage.from_(bucket_name).remove([file_name])
+                            # Simplemente eliminar la URL de la lista
+                            # No podemos eliminar el archivo de Digital Ocean desde aquí
+                            # pero podemos implementar una limpieza periódica si es necesario
                             current_media_urls.remove(url)
                         except Exception as e:
                             print(f"Error al eliminar archivo multimedia: {e}")
             
             # Añadir nuevos archivos multimedia
             if new_media_files:
-                bucket_name = "news_media"
-                
-                # Asegurarse de que el bucket existe
-                try:
-                    buckets = SupabaseClient.client.storage.list_buckets()
-                    bucket_exists = any(bucket.name == bucket_name for bucket in buckets)
-                    
-                    if not bucket_exists:
-                        SupabaseClient.client.storage.create_bucket(bucket_name)
-                except Exception as bucket_error:
-                    print(f"Error al verificar/crear bucket: {bucket_error}")
-                
-                # Subir cada archivo
+                # Usar el servicio de upload de archivos en lugar de subir directamente a Supabase
+                file_service = FileService()
                 for media_file in new_media_files:
                     try:
-                        # Generar un nombre único para el archivo
+                        # Preparar los datos para la API de upload
+                        folder_name = "news_media"
                         file_ext = os.path.splitext(media_file.get('filename', ''))[1]
                         unique_filename = f"{uuid.uuid4()}{file_ext}"
-                        file_path = f"{unique_filename}"
                         
-                        # Subir el archivo
-                        result = SupabaseClient.client.storage.from_(bucket_name).upload(
-                            file_path,
-                            media_file.get('content'),
-                            file_options={"content-type": media_file.get('content_type', 'image/jpeg')}
+                        # Obtener el contenido
+                        content = media_file.get('content')
+                        content_type = media_file.get('content_type', 'image/jpeg')
+                        
+                        # Crear la solicitud de carga
+                        upload_request = ImageUploadRequest(
+                            folder_name=folder_name,
+                            target_width=1200,  # POST_BANNER width
+                            target_height=1200,  # POST_BANNER height
+                            desired_filename=unique_filename
                         )
                         
-                        # Obtener la URL pública
-                        media_url = SupabaseClient.client.storage.from_(bucket_name).get_public_url(file_path)
-                        current_media_urls.append(media_url)
+                        # Crear un archivo temporal con el contenido
+                        import tempfile
+                        
+                        # Crear un archivo temporal
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                            temp_file.write(content)
+                            temp_file_path = temp_file.name
+                        
+                        # Crear un objeto similar a UploadFile manualmente
+                        class MockUploadFile:
+                            def __init__(self, filename, content_type, file_path):
+                                self.filename = filename
+                                self._content_type = content_type
+                                self.file_path = file_path
+                            
+                            @property
+                            def content_type(self):
+                                return self._content_type
+                            
+                            async def read(self):
+                                with open(self.file_path, 'rb') as f:
+                                    return f.read()
+                        
+                        # Crear el objeto MockUploadFile
+                        mock_upload_file = MockUploadFile(
+                            filename=unique_filename,
+                            content_type=content_type,
+                            file_path=temp_file_path
+                        )
+                        
+                        # Procesar y subir el archivo
+                        media_url = await file_service.process_and_upload(mock_upload_file, upload_request)
+                        
+                        # Eliminar el archivo temporal
+                        os.unlink(temp_file_path)
+                        
+                        # Añadir la URL a la lista
+                        if media_url:
+                            current_media_urls.append(media_url)
+                        
                     except Exception as upload_error:
                         print(f"Error al subir archivo multimedia: {upload_error}")
+                        import traceback
+                        traceback.print_exc()
             
             # Actualizar la lista de URLs de archivos multimedia
             update_data['media_urls'] = current_media_urls

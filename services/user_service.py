@@ -113,7 +113,8 @@ class UserService:
                 profiles.append({
                     'id': str(user_response.data['id']),
                     'name': user_response.data.get('username', ''),
-                    'image': user_response.data.get('avatar_url', '')
+                    'image': user_response.data.get('avatar_url', ''),
+                    'user_type_id': user_type_id
                 })
             
             # 2. Equipos que posee el usuario
@@ -126,13 +127,16 @@ class UserService:
                     profiles.append({
                         'id': str(team['id']),
                         'name': team.get('name', ''),
-                        'image': team.get('logo', '')
+                        'image': team.get('logo', ''),
+                        'user_type_id': team_type_id
                     })
             
             # 3. Organizaciones a las que pertenece (como admin o miembro con permisos)
             try:
                 # Obtener las organizaciones a las que pertenece el usuario
                 org_member_response = SupabaseClient.client.table('user_organization').select('organization').eq('user', user_id).execute()
+                org_type_response = SupabaseClient.client.table('user_type').select('id').eq('name', 'organization').single().execute()
+                org_type_id = org_type_response.data.get('id') if org_type_response.data else None
                 
                 if org_member_response.data:
                     org_ids = [member['organization'] for member in org_member_response.data]
@@ -144,7 +148,8 @@ class UserService:
                             profiles.append({
                                 'id': str(org_response.data['id']),
                                 'name': org_response.data.get('name', ''),
-                                'image': org_response.data.get('logo', '')
+                                'image': org_response.data.get('logo', ''),
+                                'user_type_id': org_type_id
                             })
             except Exception as org_error:
                 # Si la tabla no existe o hay otro error, simplemente continuamos
