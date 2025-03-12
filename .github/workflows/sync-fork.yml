@@ -1,0 +1,42 @@
+name: Sync on Upstream Push
+
+on:
+  repository_dispatch:
+    types: [push_event]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.event.client_payload.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+          
+      - name: Configurar Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+      - name: Sincronizar con upstream
+        run: |
+          git remote add upstream https://github.com/PlayUpOrg/PlayUpFrontend.git
+          git fetch upstream main
+          
+          # Crear una rama temporal para la fusión
+          git checkout -b temp-merge-branch
+          
+          # Fusionar excluyendo archivos de workflow
+          git merge -X ours --no-commit upstream/main
+          git reset HEAD .github/workflows/
+          git checkout -- .github/workflows/
+          
+          # Confirmar y enviar los cambios
+          git commit -m "Merge upstream changes excluding workflows"
+          git checkout main
+          git merge temp-merge-branch
+          git push origin main
