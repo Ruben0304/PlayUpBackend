@@ -167,31 +167,40 @@ async def create_news(
     title: str = Form(..., description="Título de la noticia"),
     body: str = Form(..., description="Contenido de la noticia"),
     media_files: List[UploadFile] = File([], description="Archivos multimedia (imágenes/videos)"),
-    publisher_type: int = Form(..., description="Tipo de publicador (ID de user_type)")
+    publisher_type: int = Form(..., description="Tipo de publicador (ID de user_type)"),
+    publisher_id: str = Form(None, description="ID del publicador (requerido si publisher_type no es usuario)")
 ):
-    """
-    Crea una nueva noticia.
-    
-    - Requiere autenticación
-    - El usuario autenticado será el publicador si publisher_type=1 (user)
-    - Soporta carga de múltiples archivos multimedia
-    """
     try:
         # Obtener el user_id del token (requerido)
         user_id = await UserService.get_user_from_token(request, required=True)
         
-        # Procesar los archivos multimedia
-        media_data = []
+        # Procesar los archivos multimedia usando el servicio de upload
+        media_urls = []
+        import uuid
+        
         for media_file in media_files:
-            # Leer el contenido del archivo
-            content = await media_file.read()
-            
-            # Añadir a la lista de archivos
-            media_data.append({
-                "filename": media_file.filename,
-                "content": content,
-                "content_type": media_file.content_type
-            })
+            if media_file.content_type.startswith("image/"):
+                # Configuración para la subida de imágenes
+                upload_request = ImageUploadRequest(
+                    folder_name="publications",
+                    target_width=1200,
+                    target_height=800,
+                    desired_filename=f"{uuid.uuid4()}"
+                )
+                
+                # Subir la imagen usando el servicio
+                file_url = await file_service.process_and_upload(media_file, upload_request)
+                media_urls.append(file_url)
+            else:
+                # Para archivos que no son imágenes, usar el método anterior
+                content = await media_file.read()
+                media_data = {
+                    "filename": media_file.filename,
+                    "content": content,
+                    "content_type": media_file.content_type
+                }
+                # Llamar al servicio para crear la noticia con los archivos procesados
+                media_urls.append(media_data)
         
         # Llamar al servicio para crear la noticia
         result = await NewsService.create_news(
@@ -199,7 +208,9 @@ async def create_news(
             body=body,
             user_id=user_id,
             publisher_type=publisher_type,
-            media_files=media_data
+            publisher_id=publisher_id,
+            media_files=media_urls if not all(isinstance(url, str) for url in media_urls) else None,
+            media_urls=media_urls if all(isinstance(url, str) for url in media_urls) else None
         )
         
         return result
@@ -215,12 +226,6 @@ async def create_news(
 
 @router.delete("/news/{news_id}")
 async def delete_news(news_id: int, request: Request):
-    """
-    Elimina una noticia.
-    
-    - Requiere autenticación
-    - Solo el creador de la noticia o un administrador puede eliminarla
-    """
     try:
         # Obtener el user_id del token (requerido)
         user_id = await UserService.get_user_from_token(request, required=True)
@@ -250,13 +255,6 @@ async def update_news(
     is_featured: bool = Form(None, description="Destacar la noticia"),
     is_breaking: bool = Form(None, description="Noticia de última hora")
 ):
-    """
-    Actualiza una noticia existente.
-    
-    - Requiere autenticación
-    - Solo el creador de la noticia o un administrador puede actualizarla
-    - Permite añadir nuevos archivos multimedia y eliminar existentes
-    """
     try:
         # Obtener el user_id del token (requerido)
         user_id = await UserService.get_user_from_token(request, required=True)
@@ -309,20 +307,6 @@ async def update_news(
 
 @router.get("/user/profiles")
 async def get_user_profiles(request: Request):
-    """
-    Obtiene todos los perfiles con los que un usuario puede publicar:
-    - Su perfil de usuario
-    - Equipos que posee
-    - Organizaciones a las que pertenece
-    - Torneos que administra
-    
-    Cada perfil contiene:
-    - id: ID del perfil
-    - name: Nombre del perfil
-    - image: URL de la imagen del perfil
-    
-    Requiere autenticación.
-    """
     try:
         # Obtener el user_id del token (requerido)
         user_id = await UserService.get_user_from_token(request, required=True)

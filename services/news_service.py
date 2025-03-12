@@ -226,7 +226,7 @@ class NewsService:
             return {"error": str(e)}
 
     @staticmethod
-    async def create_news(title, body, user_id, publisher_type, media_files=None):
+    async def create_news(title, body, user_id, publisher_type, publisher_id=None, media_files=None, media_urls=None):
         """
         Crea una nueva noticia.
         
@@ -235,30 +235,93 @@ class NewsService:
             body: Contenido de la noticia
             user_id: ID del usuario que crea la noticia
             publisher_type: Tipo de publicador (ID de user_type)
+            publisher_id: ID del publicador (opcional, requerido si publisher_type != 1)
             media_files: Lista de diccionarios con datos de archivos multimedia (opcional)
+            media_urls: Lista de URLs de archivos multimedia ya procesados (opcional)
             
         Returns:
             Diccionario con los datos de la noticia creada
         """
         try:
-            # Determinar el publisher_id basado en el publisher_type
-            publisher_id = None
+            # Obtener el tipo de publicador de la tabla user_type
+            user_type_response = SupabaseClient.client.table('user_type').select('name').eq('id', publisher_type).single().execute()
             
-            # Si el publisher_type es 1 (user), el publisher es el usuario actual
-            if publisher_type == 1:  # Asumiendo que 1 es el ID para 'user'
-                publisher_id = user_id
+            if not user_type_response.data:
+                raise HTTPException(status_code=400, detail=f"Tipo de publicador inválido: {publisher_type}")
+            
+            publisher_type_name = user_type_response.data.get('name')
+            
+            # Determinar el publisher_id basado en el publisher_type
+            final_publisher_id = None
+            
+            # Si el publisher_type es 'user', el publisher es el usuario actual por defecto
+            if publisher_type_name == 'user':
+                final_publisher_id = publisher_id if publisher_id else user_id
             else:
-                # Para otros tipos (organización, equipo, torneo), necesitaríamos
-                # verificar que el usuario tiene permisos para publicar en nombre de ellos
-                # Podríamos añadir un parámetro publisher_id al endpoint
+                # Para otros tipos (organización, equipo, torneo), se requiere el publisher_id
+                if not publisher_id:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Para publisher_type '{publisher_type_name}', se debe especificar el publisher_id"
+                    )
+                final_publisher_id = publisher_id
+            
+            # Verificar que el publisher existe en la tabla correspondiente
+            try:
+                publisher_response = SupabaseClient.client.table(publisher_type_name).select('id').eq('id', final_publisher_id).single().execute()
+                
+                if not publisher_response.data:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"El publicador con ID {final_publisher_id} no existe en la tabla {publisher_type_name}"
+                    )
+                
+                # Verificar que el usuario tiene permisos para publicar como este publisher
+                if publisher_type_name != 'user' or (publisher_type_name == 'user' and str(final_publisher_id) != str(user_id)):
+                    # Verificar permisos según el tipo de publisher
+                    has_permission = False
+                    
+                    if publisher_type_name == 'team':
+                        # Verificar si el usuario es dueño del equipo
+                        team_response = SupabaseClient.client.table('team').select('user').eq('id', final_publisher_id).single().execute()
+                        has_permission = team_response.data and str(team_response.data.get('user')) == str(user_id)
+                    
+                    elif publisher_type_name == 'organization':
+                        # Verificar si el usuario pertenece a la organización
+                        org_response = SupabaseClient.client.table('user_organization').select('id').eq('organization', final_publisher_id).eq('user', user_id).execute()
+                        has_permission = org_response.data and len(org_response.data) > 0
+                    
+                    elif publisher_type_name == 'tournament':
+                        # Verificar si el usuario está asociado al torneo a través de la organización
+                        tournament_response = SupabaseClient.client.table('tournament').select('organization').eq('id', final_publisher_id).single().execute()
+                        if tournament_response.data:
+                            org_id = tournament_response.data.get('organization')
+                            org_response = SupabaseClient.client.table('user_organization').select('id').eq('organization', org_id).eq('user', user_id).execute()
+                            has_permission = org_response.data and len(org_response.data) > 0
+                    
+                    if not has_permission:
+                        raise HTTPException(
+                            status_code=403, 
+                            detail=f"No tienes permisos para publicar como este {publisher_type_name}"
+                        )
+            
+            except HTTPException as http_ex:
+                raise http_ex
+            except Exception as e:
+                print(f"Error al verificar publisher: {e}")
                 raise HTTPException(
                     status_code=400, 
-                    detail="Para publisher_type diferente de 'user', se debe especificar el publisher_id"
+                    detail=f"Error al verificar publisher: {str(e)}"
                 )
             
             # Subir los archivos multimedia si se proporcionan
-            media_urls = []
-            if media_files:
+            final_media_urls = []
+            
+            # Si se proporcionan URLs ya procesadas, usarlas directamente
+            if media_urls:
+                final_media_urls = media_urls
+            # Si no, procesar los archivos multimedia si se proporcionan
+            elif media_files:
                 # Asegurarse de que el bucket existe
                 bucket_name = "news_media"
                 try:
@@ -287,7 +350,7 @@ class NewsService:
                         
                         # Obtener la URL pública
                         media_url = SupabaseClient.client.storage.from_(bucket_name).get_public_url(file_path)
-                        media_urls.append(media_url)
+                        final_media_urls.append(media_url)
                     except Exception as upload_error:
                         print(f"Error al subir archivo multimedia: {upload_error}")
             
@@ -296,8 +359,8 @@ class NewsService:
                 'title': title,
                 'body': body,
                 'publisher_type': publisher_type,
-                'publisher': str(publisher_id),  # Asegurarse de que sea string según la estructura
-                'media_urls': media_urls,  # Array de URLs
+                'publisher': str(final_publisher_id),  # Asegurarse de que sea string según la estructura
+                'media_urls': final_media_urls,  # Array de URLs
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
