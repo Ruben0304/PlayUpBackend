@@ -2,6 +2,7 @@ from http.client import HTTPException
 
 from fastapi import APIRouter, Query, Request,UploadFile, File,Form
 
+from domain.enums.image_sizes import ImageSize
 from domain.schemas.file_schema import ImageUploadRequest
 from fastapi import APIRouter, Query, Request, HTTPException
 from fastapi import APIRouter, Query, Request, HTTPException, File, UploadFile, Form, Depends
@@ -137,25 +138,43 @@ async def debug_comments(news_id: int):
 @router.post("/upload")
 async def upload_file(
         folder_name: str = Form(...),
-        target_width: int = Form(...),
-        target_height: int = Form(...),
         desired_filename: str = Form(...),
-        file: UploadFile = File(...)
+        file: UploadFile = File(...),
+        image_size: str = Form(None),  # Parámetro opcional para usar el enum
+        target_width: int = Form(None),  # Ahora es opcional
+        target_height: int = Form(None)  # Ahora es opcional
 ):
     try:
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Solo se permiten archivos de imagen")
+
+        # Determinar dimensiones (priorizar parámetros específicos)
+        width = target_width
+        height = target_height
+
+        # Si no se proporcionan dimensiones específicas, usar el enum
+        if (width is None or height is None) and image_size:
+            try:
+                selected_size = ImageSize[image_size]
+                width = selected_size.width
+                height = selected_size.height
+            except KeyError:
+                raise HTTPException(400, f"Tamaño de imagen no válido. Opciones disponibles: {', '.join([size.name for size in ImageSize])}")
+
+        # Verificar que tenemos dimensiones válidas
+        if width is None or height is None:
+            raise HTTPException(400, "Debe proporcionar dimensiones (target_width y target_height) o un tamaño predefinido (image_size)")
+
         # Crear request object
         upload_request = ImageUploadRequest(
             folder_name=folder_name,
-            target_width=target_width,
-            target_height=target_height,
+            target_width=width,
+            target_height=height,
             desired_filename=desired_filename
         )
         # Procesar y subir
         file_url = await file_service.process_and_upload(file, upload_request)
-
         return {"url": file_url}
 
     except Exception as e:
