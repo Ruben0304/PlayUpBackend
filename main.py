@@ -3,7 +3,6 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 
-from core.config import SUPABASE_URL
 
 load_dotenv()  # Load environment variables from a .env file
 
