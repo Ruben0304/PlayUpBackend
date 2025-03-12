@@ -230,10 +230,40 @@ async def upload_file(
         target_width: int = Form(None),  # Ahora es opcional
         target_height: int = Form(None)  # Ahora es opcional
 ):
+    """
+    Sube una imagen y la redimensiona según un tamaño predefinido.
+
+    Tamaños válidos para el parámetro 'image_size':
+    - PROFILE_PICTURE: (1080, 1080) - Formato 1:1 para fotos de perfil
+    - PROFILE_BANNER: (1200, 600) - Formato 2:1 para banners de perfil
+    - HEADER_BANNER: (1920, 1080) - Formato 16:9 para cabeceras
+    - STORY_BANNER: (1080, 1920) - Formato 9:16 para historias
+    - POST_BANNER: (1200, 1200) - Formato 1:1 para publicaciones
+    - AD_BANNER: (1200, 628) - Formato 1.91:1 para anuncios
+    - THUMBNAIL: (500, 500) - Formato 1:1 para miniaturas
+    """
     try:
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Solo se permiten archivos de imagen")
+
+        # Determinar dimensiones (priorizar parámetros específicos)
+        width = target_width
+        height = target_height
+
+        # Si no se proporcionan dimensiones específicas, usar el enum
+        if (width is None or height is None) and image_size:
+            try:
+                selected_size = ImageSize[image_size]
+                width = selected_size.width
+                height = selected_size.height
+            except KeyError:
+                raise HTTPException(400, f"Tamaño de imagen no válido. Opciones disponibles: {', '.join([size.name for size in ImageSize])}")
+
+        # Verificar que tenemos dimensiones válidas
+        if width is None or height is None:
+            raise HTTPException(400, "Debe proporcionar dimensiones (target_width y target_height) o un tamaño predefinido (image_size)")
+
         # Crear request object
         upload_request = ImageUploadRequest(
             folder_name=folder_name,
@@ -241,6 +271,7 @@ async def upload_file(
             target_height=height,
             desired_filename=desired_filename
         )
+
         # Procesar y subir
         file_url = await file_service.process_and_upload(file, upload_request)
         return {"url": file_url}
