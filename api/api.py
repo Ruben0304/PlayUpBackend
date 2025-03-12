@@ -142,7 +142,7 @@ async def upload_file(
         desired_filename: str = Form(...),
         file: UploadFile = File(...)
 ):
-        try:
+    try:
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Solo se permiten archivos de imagen")
@@ -153,6 +153,14 @@ async def upload_file(
             target_height=target_height,
             desired_filename=desired_filename
         )
+        # Procesar y subir
+        file_url = await file_service.process_and_upload(file, upload_request)
+
+        return {"url": file_url}
+
+    except Exception as e:
+        raise HTTPException(500, f"Error subiendo archivo: {str(e)}")
+
 @router.post("/news")
 async def create_news(
     request: Request,
@@ -334,10 +342,4 @@ async def get_user_profiles(request: Request):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error al obtener perfiles del usuario: {str(e)}")
 
-        # Procesar y subir
-        file_url = await file_service.process_and_upload(file, upload_request)
-
-        return {"url": file_url}
-
-    except Exception as e:
-        raise HTTPException(500, f"Error subiendo archivo: {str(e)}")
+        
