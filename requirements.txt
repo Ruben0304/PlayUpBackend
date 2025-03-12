@@ -9,3 +9,4 @@ python-dotenv
 supabase
 requests
 pillow
+python-multipart
