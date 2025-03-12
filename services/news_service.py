@@ -115,8 +115,9 @@ class NewsService:
                 processed_item['like_count'] = NewsInteractionService.get_like_count(news_id)
                 processed_item['comment_count'] = NewsInteractionService.get_comment_count(news_id)
                 
-                # Siempre establecer owner, incluso si user_id es None
+                # Siempre establecer owner y user_liked, incluso si user_id es None
                 processed_item['owner'] = False
+                processed_item['user_liked'] = False
                 
                 # Si se proporciona un user_id, verificar si el usuario ha dado like
                 if user_id:
@@ -265,8 +266,9 @@ class NewsService:
             processed_item['like_count'] = NewsInteractionService.get_like_count(news_id)
             processed_item['comment_count'] = NewsInteractionService.get_comment_count(news_id)
             
-            # Siempre establecer owner, incluso si user_id es None
+            # Siempre establecer owner y user_liked, incluso si user_id es None
             processed_item['owner'] = False
+            processed_item['user_liked'] = False
             
             # Si se proporciona un user_id, verificar si el usuario ha dado like
             if user_id:
