@@ -97,3 +97,14 @@ class BracketStage:
     id: int
     tournament_season: int
     fixture_round: int
+
+class NewsModel(BaseModel):
+    id: int
+    title: str
+    body: str
+    media_urls: List[str]
+    publisher: str
+    publisher_type: int
+    created_at: str
+    updated_at: str
+    
