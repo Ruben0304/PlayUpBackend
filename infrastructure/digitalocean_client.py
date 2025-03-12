@@ -66,7 +66,7 @@ class DigitalOceanClient:
 
             # 2. Codificar path y crear URL
             encoded_path = quote(file_path.lstrip('/'))
-            url = f"{self.endpoint}/{encoded_path}"
+            url = f"https://{self.bucket}.{self.region}.digitaloceanspaces.com/{encoded_path}"
 
             # 3. Calcular hash del contenido
             content_hash = hashlib.sha256(file_content).hexdigest()

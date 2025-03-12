@@ -1,12 +1,24 @@
+from pydantic import BaseModel
+from dotenv import load_dotenv
 import os
 
-# SUPABASE_URL = "https://tnuvhxvelwizhieiiglq.supabase.co"
-# SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRudXZoeHZlbHdpemhpZWlpZ2xxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY4OTgzMzI3NywiZXhwIjoyMDA1NDA5Mjc3fQ.D1sc8Qug8ua2nO0xf3_xJkp5Bx7bBP3ZS_snAwehODg"
-SUPABASE_URL = "http://127.0.0.1:54321"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+load_dotenv()  # Carga las variables de entorno desde .env
 
-DO_SPACES_KEY = "DO00K3R7XEHWK23FVAAL"
-DO_SPACES_SECRET = "BkavYDsY56r7NpVzZJ+ISav/iUkCJoBcu62FUEI35zQ"
-DO_SPACES_BUCKET = "playup"
-DO_SPACES_REGION = "nyc3"
-DO_SPACES_ENDPOINT = "https://nyc3.digitaloceanspaces.com"
+class Settings(BaseModel):
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY")
+    DO_SPACES_KEY: str = os.getenv("DO_SPACES_KEY")
+    DO_SPACES_SECRET: str = os.getenv("DO_SPACES_SECRET")
+    DO_SPACES_BUCKET: str = "playup"
+    DO_SPACES_REGION: str = "nyc3"
+    DO_SPACES_ENDPOINT: str = "https://nyc3.digitaloceanspaces.com"
+
+settings = Settings()
+
+SUPABASE_URL = settings.SUPABASE_URL
+SUPABASE_KEY = settings.SUPABASE_KEY
+DO_SPACES_KEY = settings.DO_SPACES_KEY
+DO_SPACES_SECRET = settings.DO_SPACES_SECRET
+DO_SPACES_BUCKET = settings.DO_SPACES_BUCKET
+DO_SPACES_REGION = settings.DO_SPACES_REGION
+DO_SPACES_ENDPOINT = settings.DO_SPACES_ENDPOINT
