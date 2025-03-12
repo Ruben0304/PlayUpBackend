@@ -3,82 +3,128 @@ import hmac
 import datetime
 import requests
 from urllib.parse import quote
+import logging
 
-from core.config import DO_SPACES_BUCKET, DO_SPACES_REGION, DO_SPACES_SECRET, DO_SPACES_KEY
+from core.config import DO_SPACES_ENDPOINT, DO_SPACES_BUCKET, DO_SPACES_REGION, DO_SPACES_SECRET, DO_SPACES_KEY
 
+logger = logging.getLogger(__name__)
 
 class DigitalOceanClient:
     def __init__(self):
-        self.host = f"{DO_SPACES_BUCKET}.{DO_SPACES_REGION}.digitaloceanspaces.com"
-        self.base_url = f"https://{self.host}"
+        self.endpoint = DO_SPACES_ENDPOINT
+        self.bucket = DO_SPACES_BUCKET
+        self.region = DO_SPACES_REGION
+        self.service = "s3"
+        self.request_type = "aws4_request"
 
-    @staticmethod
-    def _sign(key, msg):
+    def _sign(self, key: bytes, msg: str) -> bytes:
+        """Firma un mensaje con la clave proporcionada"""
         return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
-    def _get_signing_key(self, date_stamp):
+    def _get_signing_key(self, date_stamp: str) -> bytes:
+        """Genera la clave de firma en 4 pasos"""
         k_date = self._sign(f"AWS4{DO_SPACES_SECRET}".encode(), date_stamp)
-        k_region = self._sign(k_date, DO_SPACES_REGION)
-        k_service = self._sign(k_region, "s3")
-        return self._sign(k_service, "aws4_request")
+        k_region = self._sign(k_date, self.region)
+        k_service = self._sign(k_region, self.service)
+        return self._sign(k_service, self.request_type)
 
-    def upload_file(self, file_content: bytes, filename: str) -> str:
+    def _create_canonical_request(self, method: str, path: str, headers: dict, content_hash: str) -> str:
+        """Crea la solicitud canónica para la firma"""
+        sorted_headers = sorted(headers.items(), key=lambda x: x[0].lower())
+
+        canonical_headers = "\n".join([f"{k.lower()}:{v}" for k, v in sorted_headers])
+        signed_headers = ";".join([k.lower() for k, v in sorted_headers])
+
+        return "\n".join([
+            method,
+            path,
+            "",  # query string vacío
+            canonical_headers,
+            "",
+            signed_headers,
+            content_hash
+        ])
+
+    def _generate_signature(self, canonical_request: str, date_stamp: str, amz_date: str, signing_key: bytes) -> str:
+        """Genera la firma final"""
+        credential_scope = f"{date_stamp}/{self.region}/{self.service}/{self.request_type}"
+        string_to_sign = "\n".join([
+            "AWS4-HMAC-SHA256",
+            amz_date,
+            credential_scope,
+            hashlib.sha256(canonical_request.encode()).hexdigest()
+        ])
+        return hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+
+    def upload_file(self, file_content: bytes, file_path: str) -> str:
+        """Sube un archivo a Digital Ocean Spaces"""
         try:
-            # 1. Configurar parámetros temporales
+            # 1. Preparar parámetros de fecha
             now = datetime.datetime.utcnow()
             amz_date = now.strftime("%Y%m%dT%H%M%SZ")
             date_stamp = now.strftime("%Y%m%d")
-            encoded_filename = quote(filename)
 
-            # 2. Headers (¡Orden alfabético!)
+            # 2. Codificar path y crear URL
+            encoded_path = quote(file_path.lstrip('/'))
+            url = f"{self.endpoint}/{encoded_path}"
+
+            # 3. Calcular hash del contenido
+            content_hash = hashlib.sha256(file_content).hexdigest()
+
+            # 4. Crear headers
             headers = {
-                "Content-Length": str(len(file_content)),
                 "Content-Type": "application/octet-stream",
-                "Host": self.host,
+                "Host": f"{self.bucket}.{self.region}.digitaloceanspaces.com",
                 "x-amz-acl": "public-read",
-                "x-amz-content-sha256": hashlib.sha256(file_content).hexdigest(),
+                "x-amz-content-sha256": content_hash,
                 "x-amz-date": amz_date
             }
 
-            # 3. Crear solicitud canónica (¡Igual que en Colab!)
-            sorted_headers = sorted(headers.items(), key=lambda x: x[0].lower())
+            # 5. Crear solicitud canónica
+            canonical_request = self._create_canonical_request(
+                method="PUT",
+                path=f"/{encoded_path}",
+                headers=headers,
+                content_hash=content_hash
+            )
 
-            canonical_request = "\n".join([
-                "PUT",
-                f"/{encoded_filename}",
-                "",
-                "\n".join([f"{k.lower()}:{v}" for k, v in sorted_headers]),
-                "",
-                ";".join([k.lower() for k, v in sorted_headers]),
-                headers["x-amz-content-sha256"]
-            ])
-
-            # 4. Generar firma
-            credential_scope = f"{date_stamp}/{DO_SPACES_REGION}/s3/aws4_request"
-            string_to_sign = "\n".join([
-                "AWS4-HMAC-SHA256",
-                amz_date,
-                credential_scope,
-                hashlib.sha256(canonical_request.encode()).hexdigest()
-            ])
-
+            # 6. Generar firma
             signing_key = self._get_signing_key(date_stamp)
-            signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+            signature = self._generate_signature(
+                canonical_request=canonical_request,
+                date_stamp=date_stamp,
+                amz_date=amz_date,
+                signing_key=signing_key
+            )
 
-            # 5. Construir headers finales
+            # 7. Construir headers finales
+            credential_scope = f"{date_stamp}/{self.region}/{self.service}/{self.request_type}"
+            signed_headers = ";".join(sorted([k.lower() for k in headers.keys()]))
+
             headers["Authorization"] = (
-                f"AWS4-HMAC-SHA256 Credential={DO_SPACES_KEY}/{credential_scope}, "
-                f"SignedHeaders={';'.join([k.lower() for k, v in sorted_headers])}, "
+                f"AWS4-HMAC-SHA256 "
+                f"Credential={DO_SPACES_KEY}/{credential_scope}, "
+                f"SignedHeaders={signed_headers}, "
                 f"Signature={signature}"
             )
 
-            # 6. Enviar petición
-            url = f"{self.base_url}/{encoded_filename}"
-            response = requests.put(url, headers=headers, data=file_content)
+            # 8. Enviar solicitud
+            response = requests.put(
+                url,
+                headers=headers,
+                data=file_content,
+                timeout=30
+            )
 
-            if response.status_code == 200:
-                return url
-            raise Exception(f"Error {response.status_code}: {response.text}")
+            if not response.ok:
+                logger.error(f"Error en Digital Ocean: {response.status_code} - {response.text}")
+                raise RuntimeError(f"DO Spaces error: {response.text}")
 
+            return url
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error de conexión: {str(e)}")
+            raise RuntimeError("Error de conexión con Digital Ocean Spaces")
         except Exception as e:
-            raise RuntimeError(f"DO Spaces upload failed: {str(e)}")
+            logger.error(f"Error inesperado: {str(e)}")
+            raise

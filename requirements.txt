@@ -7,3 +7,4 @@ pydantic
 dotenv
 python-dotenv
 supabase
+requests

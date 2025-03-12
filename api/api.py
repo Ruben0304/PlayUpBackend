@@ -1,6 +1,8 @@
 from http.client import HTTPException
 
-from fastapi import APIRouter, Query, Request,UploadFile, File
+from fastapi import APIRouter, Query, Request,UploadFile, File,Form
+
+from domain.schemas.file_schema import ImageUploadRequest
 from services.country_service import CountryService
 from services.file_service import FileService
 from services.notification_service import NotificationService
@@ -40,14 +42,31 @@ async def approve_organizer_from_waitlist(request: Request):
     payload = await request.json()
     return UserService.approve_organizer_from_waitlist(payload['user_id'])
 
-@router.post("/upload", tags=["files"])
-async def upload_file(file: UploadFile = File(...)):
+@router.post("/upload")
+async def upload_file(
+        folder_name: str = Form(...),
+        target_width: int = Form(...),
+        target_height: int = Form(...),
+        desired_filename: str = Form(...),
+        file: UploadFile = File(...)
+):
     try:
+        # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
-            raise HTTPException(400, "Only image files are allowed")
+            raise HTTPException(400, "Solo se permiten archivos de imagen")
 
-        file_url = await file_service.upload_to_spaces(file)
+        # Crear request object
+        upload_request = ImageUploadRequest(
+            folder_name=folder_name,
+            target_width=target_width,
+            target_height=target_height,
+            desired_filename=desired_filename
+        )
+
+        # Procesar y subir
+        file_url = await file_service.process_and_upload(file, upload_request)
+
         return {"url": file_url}
 
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, f"Error subiendo archivo: {str(e)}")
