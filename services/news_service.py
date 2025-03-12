@@ -2,6 +2,11 @@ from domain.models import NewsModel
 from infrastructure.supabase_client import SupabaseClient
 from translations import COUNTRY_TRANSLATIONS
 from services.news_interaction_service import NewsInteractionService
+import uuid
+import os
+from datetime import datetime
+from fastapi import HTTPException
+from services.user_service import UserService
 
 class NewsService:
     @staticmethod
@@ -16,7 +21,7 @@ class NewsService:
             total = count_response.count if hasattr(count_response, 'count') else 0
             
             # Obtener los datos paginados
-            response = SupabaseClient.client.table('news').select('*').range(start, end).execute()
+            response = SupabaseClient.client.table('news').select('*').order('created_at', desc=True).range(start, end).execute()
             data = response.data
             
             # Obtener los datos de user_type
@@ -219,3 +224,278 @@ class NewsService:
         except Exception as e:
             print(f"Error al obtener noticia: {e}")
             return {"error": str(e)}
+
+    @staticmethod
+    async def create_news(title, body, user_id, publisher_type, media_files=None):
+        """
+        Crea una nueva noticia.
+        
+        Args:
+            title: Título de la noticia
+            body: Contenido de la noticia
+            user_id: ID del usuario que crea la noticia
+            publisher_type: Tipo de publicador (ID de user_type)
+            media_files: Lista de diccionarios con datos de archivos multimedia (opcional)
+            
+        Returns:
+            Diccionario con los datos de la noticia creada
+        """
+        try:
+            # Determinar el publisher_id basado en el publisher_type
+            publisher_id = None
+            
+            # Si el publisher_type es 1 (user), el publisher es el usuario actual
+            if publisher_type == 1:  # Asumiendo que 1 es el ID para 'user'
+                publisher_id = user_id
+            else:
+                # Para otros tipos (organización, equipo, torneo), necesitaríamos
+                # verificar que el usuario tiene permisos para publicar en nombre de ellos
+                # Podríamos añadir un parámetro publisher_id al endpoint
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Para publisher_type diferente de 'user', se debe especificar el publisher_id"
+                )
+            
+            # Subir los archivos multimedia si se proporcionan
+            media_urls = []
+            if media_files:
+                # Asegurarse de que el bucket existe
+                bucket_name = "news_media"
+                try:
+                    buckets = SupabaseClient.client.storage.list_buckets()
+                    bucket_exists = any(bucket.name == bucket_name for bucket in buckets)
+                    
+                    if not bucket_exists:
+                        SupabaseClient.client.storage.create_bucket(bucket_name)
+                except Exception as bucket_error:
+                    print(f"Error al verificar/crear bucket: {bucket_error}")
+                
+                # Subir cada archivo
+                for media_file in media_files:
+                    try:
+                        # Generar un nombre único para el archivo
+                        file_ext = os.path.splitext(media_file.get('filename', ''))[1]
+                        unique_filename = f"{uuid.uuid4()}{file_ext}"
+                        file_path = f"{unique_filename}"
+                        
+                        # Subir el archivo
+                        result = SupabaseClient.client.storage.from_(bucket_name).upload(
+                            file_path,
+                            media_file.get('content'),
+                            file_options={"content-type": media_file.get('content_type', 'image/jpeg')}
+                        )
+                        
+                        # Obtener la URL pública
+                        media_url = SupabaseClient.client.storage.from_(bucket_name).get_public_url(file_path)
+                        media_urls.append(media_url)
+                    except Exception as upload_error:
+                        print(f"Error al subir archivo multimedia: {upload_error}")
+            
+            # Preparar datos para la inserción
+            news_data = {
+                'title': title,
+                'body': body,
+                'publisher_type': publisher_type,
+                'publisher': str(publisher_id),  # Asegurarse de que sea string según la estructura
+                'media_urls': media_urls,  # Array de URLs
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat()
+            }
+            
+            # Insertar la noticia
+            news_response = SupabaseClient.client.table('news').insert(news_data).execute()
+            
+            if not news_response.data:
+                raise Exception("No se pudo crear la noticia")
+            
+            news_id = news_response.data[0].get('id')
+            
+            # Obtener la noticia completa con el mismo formato que fetch_by_id
+            return NewsService.fetch_by_id(news_id, user_id)
+            
+        except HTTPException as http_ex:
+            raise http_ex
+        except Exception as e:
+            print(f"Error al crear noticia: {e}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Error al crear noticia: {str(e)}")
+
+    @staticmethod
+    def delete_news(news_id, user_id):
+        """
+        Elimina una noticia.
+        
+        Args:
+            news_id: ID de la noticia a eliminar
+            user_id: ID del usuario que intenta eliminar la noticia
+            
+        Returns:
+            Diccionario con el resultado de la operación
+        """
+        try:
+            # Verificar que la noticia existe y que el usuario tiene permisos para eliminarla
+            news = SupabaseClient.client.table('news').select('publisher, publisher_type').eq('id', news_id).single().execute()
+            
+            if not news.data:
+                raise HTTPException(status_code=404, detail="Noticia no encontrada")
+            
+            # Verificar si el usuario es el creador de la noticia
+            publisher = news.data.get('publisher')
+            publisher_type = news.data.get('publisher_type')
+            
+            # Si el publisher_type es 1 (user) y el publisher es el usuario actual, o si el usuario es admin
+            is_creator = publisher_type == 1 and publisher == str(user_id)
+            is_admin = UserService.is_admin(user_id)  # Asumiendo que existe este método
+            
+            if not (is_creator or is_admin):
+                raise HTTPException(status_code=403, detail="No tienes permisos para eliminar esta noticia")
+            
+            # Eliminar archivos multimedia asociados
+            if 'media_urls' in news.data and news.data['media_urls']:
+                bucket_name = "news_media"
+                for url in news.data['media_urls']:
+                    try:
+                        # Extraer el nombre del archivo de la URL
+                        file_name = url.split('/')[-1]
+                        SupabaseClient.client.storage.from_(bucket_name).remove([file_name])
+                    except Exception as e:
+                        print(f"Error al eliminar archivo multimedia: {e}")
+            
+            # Eliminar la noticia
+            SupabaseClient.client.table('news').delete().eq('id', news_id).execute()
+            
+            return {"success": True, "message": "Noticia eliminada correctamente"}
+            
+        except HTTPException as http_ex:
+            raise http_ex
+        except Exception as e:
+            print(f"Error al eliminar noticia: {e}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Error al eliminar noticia: {str(e)}")
+
+    @staticmethod
+    async def update_news(news_id, user_id, title=None, body=None, new_media_files=None, delete_media_urls=None, is_featured=None, is_breaking=None):
+        """
+        Actualiza una noticia existente.
+        
+        Args:
+            news_id: ID de la noticia a actualizar
+            user_id: ID del usuario que intenta actualizar la noticia
+            title: Nuevo título (opcional)
+            body: Nuevo contenido (opcional)
+            new_media_files: Nuevos archivos multimedia (opcional)
+            delete_media_urls: URLs de archivos multimedia a eliminar (opcional)
+            is_featured: Si la noticia es destacada (opcional)
+            is_breaking: Si la noticia es de última hora (opcional)
+            
+        Returns:
+            Diccionario con los datos de la noticia actualizada
+        """
+        try:
+            # Verificar que la noticia existe y que el usuario tiene permisos para actualizarla
+            news_response = SupabaseClient.client.table('news').select('*').eq('id', news_id).single().execute()
+            
+            if not news_response.data:
+                raise HTTPException(status_code=404, detail="Noticia no encontrada")
+            
+            news = news_response.data
+            
+            # Verificar si el usuario es el creador de la noticia
+            publisher = news.get('publisher')
+            publisher_type = news.get('publisher_type')
+            
+            # Si el publisher_type es 1 (user) y el publisher es el usuario actual, o si el usuario es admin
+            is_creator = publisher_type == 1 and publisher == str(user_id)
+            is_admin = UserService.is_admin(user_id)  # Asumiendo que existe este método
+            
+            if not (is_creator or is_admin):
+                raise HTTPException(status_code=403, detail="No tienes permisos para actualizar esta noticia")
+            
+            # Preparar datos para la actualización
+            update_data = {}
+            
+            if title is not None:
+                update_data['title'] = title
+            
+            if body is not None:
+                update_data['body'] = body
+            
+            if is_featured is not None:
+                update_data['is_featured'] = is_featured
+            
+            if is_breaking is not None:
+                update_data['is_breaking'] = is_breaking
+            
+            # Actualizar la fecha de modificación
+            update_data['updated_at'] = datetime.now().isoformat()
+            
+            # Gestionar archivos multimedia
+            current_media_urls = news.get('media_urls', [])
+            
+            # Eliminar archivos multimedia si se solicita
+            if delete_media_urls:
+                bucket_name = "news_media"
+                for url in delete_media_urls:
+                    if url in current_media_urls:
+                        try:
+                            # Extraer el nombre del archivo de la URL
+                            file_name = url.split('/')[-1]
+                            SupabaseClient.client.storage.from_(bucket_name).remove([file_name])
+                            current_media_urls.remove(url)
+                        except Exception as e:
+                            print(f"Error al eliminar archivo multimedia: {e}")
+            
+            # Añadir nuevos archivos multimedia
+            if new_media_files:
+                bucket_name = "news_media"
+                
+                # Asegurarse de que el bucket existe
+                try:
+                    buckets = SupabaseClient.client.storage.list_buckets()
+                    bucket_exists = any(bucket.name == bucket_name for bucket in buckets)
+                    
+                    if not bucket_exists:
+                        SupabaseClient.client.storage.create_bucket(bucket_name)
+                except Exception as bucket_error:
+                    print(f"Error al verificar/crear bucket: {bucket_error}")
+                
+                # Subir cada archivo
+                for media_file in new_media_files:
+                    try:
+                        # Generar un nombre único para el archivo
+                        file_ext = os.path.splitext(media_file.get('filename', ''))[1]
+                        unique_filename = f"{uuid.uuid4()}{file_ext}"
+                        file_path = f"{unique_filename}"
+                        
+                        # Subir el archivo
+                        result = SupabaseClient.client.storage.from_(bucket_name).upload(
+                            file_path,
+                            media_file.get('content'),
+                            file_options={"content-type": media_file.get('content_type', 'image/jpeg')}
+                        )
+                        
+                        # Obtener la URL pública
+                        media_url = SupabaseClient.client.storage.from_(bucket_name).get_public_url(file_path)
+                        current_media_urls.append(media_url)
+                    except Exception as upload_error:
+                        print(f"Error al subir archivo multimedia: {upload_error}")
+            
+            # Actualizar la lista de URLs de archivos multimedia
+            update_data['media_urls'] = current_media_urls
+            
+            # Actualizar la noticia
+            if update_data:
+                SupabaseClient.client.table('news').update(update_data).eq('id', news_id).execute()
+            
+            # Obtener la noticia actualizada
+            return NewsService.fetch_by_id(news_id, user_id)
+            
+        except HTTPException as http_ex:
+            raise http_ex
+        except Exception as e:
+            print(f"Error al actualizar noticia: {e}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Error al actualizar noticia: {str(e)}")
