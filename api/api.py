@@ -52,6 +52,18 @@ async def upload_file(
         target_width: int = Form(None),  # Ahora es opcional
         target_height: int = Form(None)  # Ahora es opcional
 ):
+    """
+    Sube una imagen y la redimensiona según un tamaño predefinido.
+
+    Tamaños válidos para el parámetro 'image_size':
+    - PROFILE_PICTURE: (1080, 1080) - Formato 1:1 para fotos de perfil
+    - PROFILE_BANNER: (1200, 600) - Formato 2:1 para banners de perfil
+    - HEADER_BANNER: (1920, 1080) - Formato 16:9 para cabeceras
+    - STORY_BANNER: (1080, 1920) - Formato 9:16 para historias
+    - POST_BANNER: (1200, 1200) - Formato 1:1 para publicaciones
+    - AD_BANNER: (1200, 628) - Formato 1.91:1 para anuncios
+    - THUMBNAIL: (500, 500) - Formato 1:1 para miniaturas
+    """
     try:
         # Validar tipo de archivo
         if not file.content_type.startswith("image/"):
