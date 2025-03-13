@@ -128,3 +128,80 @@ class DigitalOceanClient:
         except Exception as e:
             logger.error(f"Error inesperado: {str(e)}")
             raise
+            
+    def delete_file(self, file_path: str) -> bool:
+        """Elimina un archivo de Digital Ocean Spaces por su ruta
+        
+        Args:
+            file_path: Ruta del archivo a eliminar
+            
+        Returns:
+            bool: True si se eliminó correctamente, False en caso contrario
+            
+        Raises:
+            RuntimeError: Si ocurre un error al conectar con Digital Ocean Spaces
+        """
+        try:
+            # 1. Preparar parámetros de fecha
+            now = datetime.datetime.utcnow()
+            amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+            date_stamp = now.strftime("%Y%m%d")
+            
+            # 2. Codificar path y crear URL
+            encoded_path = quote(file_path.lstrip('/'))
+            url = f"https://{self.bucket}.{self.region}.digitaloceanspaces.com/{encoded_path}"
+            
+            # 3. Crear headers básicos (sin contenido para DELETE)
+            headers = {
+                "Host": f"{self.bucket}.{self.region}.digitaloceanspaces.com",
+                "x-amz-content-sha256": hashlib.sha256(b"").hexdigest(),
+                "x-amz-date": amz_date
+            }
+            
+            # 4. Crear solicitud canónica
+            canonical_request = self._create_canonical_request(
+                method="DELETE",
+                path=f"/{encoded_path}",
+                headers=headers,
+                content_hash=hashlib.sha256(b"").hexdigest()
+            )
+            
+            # 5. Generar firma
+            signing_key = self._get_signing_key(date_stamp)
+            signature = self._generate_signature(
+                canonical_request=canonical_request,
+                date_stamp=date_stamp,
+                amz_date=amz_date,
+                signing_key=signing_key
+            )
+            
+            # 6. Construir headers finales
+            credential_scope = f"{date_stamp}/{self.region}/{self.service}/{self.request_type}"
+            signed_headers = ";".join(sorted([k.lower() for k in headers.keys()]))
+            
+            headers["Authorization"] = (
+                f"AWS4-HMAC-SHA256 "
+                f"Credential={DO_SPACES_KEY}/{credential_scope}, "
+                f"SignedHeaders={signed_headers}, "
+                f"Signature={signature}"
+            )
+            
+            # 7. Enviar solicitud DELETE
+            response = requests.delete(
+                url,
+                headers=headers,
+                timeout=30
+            )
+            
+            if not response.ok:
+                logger.error(f"Error al eliminar archivo: {response.status_code} - {response.text}")
+                return False
+                
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error de conexión al eliminar archivo: {str(e)}")
+            raise RuntimeError("Error de conexión con Digital Ocean Spaces")
+        except Exception as e:
+            logger.error(f"Error inesperado al eliminar archivo: {str(e)}")
+            raise

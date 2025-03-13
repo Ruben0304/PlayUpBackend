@@ -9,6 +9,8 @@ from fastapi import HTTPException
 from services.user_service import UserService
 from domain.schemas.file_schema import ImageUploadRequest
 from services.file_service import FileService
+from infrastructure.digitalocean_client import DigitalOceanClient
+import logging
 
 class NewsService:
     @staticmethod
@@ -555,7 +557,7 @@ class NewsService:
         """
         try:
             # Verificar que la noticia existe y que el usuario tiene permisos para eliminarla
-            news = SupabaseClient.client.table('news').select('publisher, publisher_type').eq('id', news_id).single().execute()
+            news = SupabaseClient.client.table('news').select('publisher, publisher_type, media_urls').eq('id', news_id).single().execute()
             
             if not news.data:
                 raise HTTPException(status_code=404, detail="Noticia no encontrada")
@@ -571,8 +573,24 @@ class NewsService:
             if not (is_creator or is_admin):
                 raise HTTPException(status_code=403, detail="No tienes permisos para eliminar esta noticia")
             
-            # No es necesario eliminar los archivos multimedia de Digital Ocean
-            # Se puede implementar una limpieza periódica si es necesario
+            # Eliminar los archivos multimedia de Digital Ocean
+            media_urls = news.data.get('media_urls', [])
+            if media_urls:
+                do_client = DigitalOceanClient()
+                for url in media_urls:
+                    try:
+                        # Extraer la ruta del archivo de la URL
+                        # La URL tiene formato: https://{bucket}.{region}.digitaloceanspaces.com/{path}
+                        # Necesitamos extraer {path}
+                        file_path = url.split(f"{do_client.bucket}.{do_client.region}.digitaloceanspaces.com/")[1]
+                        
+                        # Eliminar el archivo
+                        success = do_client.delete_file(file_path)
+                        if not success:
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"No se pudo eliminar el archivo {file_path} de Digital Ocean")
+                    except Exception as e:
+                        print(f"Error al eliminar archivo multimedia: {e}")
             
             # Eliminar la noticia
             SupabaseClient.client.table('news').delete().eq('id', news_id).execute()
