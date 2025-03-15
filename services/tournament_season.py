@@ -1,10 +1,26 @@
 from infrastructure.supabase_client import SupabaseClient
+
 from domain.models import Match, TournamentSeason, OtherMatch
+from query_supabase import QuerySupabase
 from services.bracket_service import BracketService
 from .bracket_creator import BracketCreator
 import os
 
 class TournamentSeasonService:
+    
+    @staticmethod
+    def is_active(tournament_season_id):
+        tournament_status = SupabaseClient.client.table('tournament_season') \
+                .select(QuerySupabase.tournamentSeason) \
+                .eq('id', tournament_season_id) \
+                .execute()
+        
+        if tournament_status.data and len(tournament_status.data) > 0:
+            is_active = tournament_status.data[0]['tournament_status']['status']
+            return is_active in ['open', 'in_progress']
+        
+        return False
+
     @staticmethod
     def create_bracket(payload):
         try:

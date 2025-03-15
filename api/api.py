@@ -10,6 +10,7 @@ from services.country_service import CountryService
 from services.file_service import FileService
 from services.news_service import NewsService
 from services.notification_service import NotificationService
+from services.team_service import TeamService
 from services.tournament_season import TournamentSeasonService
 from services.user_service import UserService
 from infrastructure.supabase_client import SupabaseClient
@@ -369,3 +370,11 @@ async def get_user_profiles(request: Request):
         raise HTTPException(status_code=500, detail=f"Error al obtener perfiles del usuario: {str(e)}")
 
         
+# *** ROSTER 
+@router.delete("/roster/{id}/remove")
+async def remove_player_from_roster(id: int):
+    try:
+        TeamService.remove_player_from_roster(id)
+        return True
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
