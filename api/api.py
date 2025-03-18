@@ -4,8 +4,7 @@ from fastapi import APIRouter, Query, Request,UploadFile, File,Form
 
 from domain.enums.image_sizes import ImageSize
 from domain.schemas.file_schema import ImageUploadRequest
-from fastapi import APIRouter, Query, Request, HTTPException
-from fastapi import APIRouter, Query, Request, HTTPException, File, UploadFile, Form, Depends
+from services.auth_service import AuthService
 from services.country_service import CountryService
 from services.file_service import FileService
 from services.news_service import NewsService
@@ -378,3 +377,30 @@ async def remove_player_from_roster(id: int):
         return True
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# *** AUTH 
+@router.post("/auth/refresh-token")
+async def refresh_token(request: Request):
+    try:
+       return await AuthService.refresh_token(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/auth/signin")
+def sign_in():
+    try:
+        user = AuthService.sign_in('ale24dev@gmail.com', '12345678')
+        return user
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/team/add-player-to-roster")
+async def add_player_to_roster(request: Request):
+    try:
+        payload = await request.json()
+        result = TeamService.add_player_to_roster(payload)
+        return result
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
