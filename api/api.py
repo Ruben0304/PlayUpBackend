@@ -375,7 +375,11 @@ async def get_user_profiles(request: Request):
 @router.post("/auth/refresh-token")
 async def refresh_token(request: Request):
     try:
-       return await AuthService.refresh_token(request)
+        payload = await request.json()
+        session = await AuthService.refresh_token(payload)
+        return session
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail="Invalid refresh token format")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
