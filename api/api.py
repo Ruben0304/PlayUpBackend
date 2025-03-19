@@ -369,14 +369,7 @@ async def get_user_profiles(request: Request):
         raise HTTPException(status_code=500, detail=f"Error al obtener perfiles del usuario: {str(e)}")
 
         
-# *** ROSTER 
-@router.delete("/roster/{id}/remove")
-async def remove_player_from_roster(id: int):
-    try:
-        TeamService.remove_player_from_roster(id)
-        return True
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
     
 # *** AUTH 
 @router.post("/auth/refresh-token")
@@ -393,8 +386,17 @@ def sign_in():
         return user
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# *** TEAM 
+@router.delete("/team/roster/{id}/remove")
+async def remove_player_from_roster(id: int):
+    try:
+        TeamService.remove_player_from_roster(id)
+        return True
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/team/add-player-to-roster")
+@router.post("/team/roster/add")
 async def add_player_to_roster(request: Request):
     try:
         payload = await request.json()

@@ -23,7 +23,6 @@ class TeamService:
             
     @staticmethod
     def add_player_to_roster(payload):
-       
         player_id = payload['player_id']
         team_id = payload['team_id']
         tournament_season_id = payload['tournament_season_id']
@@ -46,19 +45,26 @@ class TeamService:
         # Verificar si el jugador ya existe en el torneo
         player_exists_result = (SupabaseClient.client
             .table("roster")
-            .select("id, team_tournament(tournament_season)")
+            .select("id, is_active")
             .eq("player", player_id)
-            .eq("team_tournament.tournament_season", tournament_season_id)
+            .eq("team_tournament", team_tournament_id)
             .execute())
         
-        player_exists = len(player_exists_result.data) > 0
-        print(f"player_exists: {player_exists}")  # Depuración
+        # Verificar si el jugador existe y su estado
+        if len(player_exists_result.data) > 0:
+            player_data = player_exists_result.data[0]
+            if player_data["is_active"]:
+                raise Exception(f"player_already_registered_in_tournament: {player_id}")
+            else:
+                # Actualizar is_active a True y retornar
+                update_result = (SupabaseClient.client
+                    .table("roster")
+                    .update({"is_active": True})
+                    .eq("id", player_data["id"])
+                    .execute())
+                return {"roster": update_result.data}
         
-        # Si el jugador ya existe, devolver un error
-        if player_exists:
-            raise Exception(f"player_already_registered_in_tournament: {player_id}")
-        
-        # Preparar los datos para insertar
+        # Si el jugador no existe, continuar con la inserción
         roster_data = {
             "player": player_id,
             "team_tournament": team_tournament_id
